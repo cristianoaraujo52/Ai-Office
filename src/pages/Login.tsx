@@ -3,7 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function Login() {
-  const { login, user } = useAuth()
+  const { login, register, user } = useAuth()
+  const [mode, setMode] = useState<'entrar' | 'cadastro'>('entrar')
+  const [nome, setNome] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [info, setInfo] = useState('')
+  const isCadastro = mode === 'cadastro'
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -18,9 +23,35 @@ export default function Login() {
     }
   }, [user, navigate])
 
+  const switchMode = (next: 'entrar' | 'cadastro') => {
+    setMode(next)
+    setError('')
+    setInfo('')
+    setPassword('')
+    setConfirmPassword('')
+  }
+
+  const handleCadastro = async () => {
+    if (nome.trim().length < 2) { setError('Informe seu nome completo.'); return }
+    if (password.length < 6) { setError('A senha precisa ter pelo menos 6 caracteres.'); return }
+    if (password !== confirmPassword) { setError('As senhas não conferem.'); return }
+
+    setLoading(true)
+    const result = await register(nome.trim(), email.trim(), password)
+    setLoading(false)
+    if (result.error) { setError(result.error); return }
+    if (result.needsConfirmation) {
+      switchMode('entrar')
+      setInfo(`Conta criada! Enviamos um link de confirmação para ${email.trim()}. Confirme o e-mail e depois entre com sua senha.`)
+    }
+    // Sem confirmação de e-mail: o login é automático e o useEffect acima redireciona.
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    setInfo('')
+    if (isCadastro) { await handleCadastro(); return }
     setLoading(true)
     const result = await login(email, password)
     setLoading(false)
@@ -34,8 +65,9 @@ export default function Login() {
     // Modo Supabase: redirecionamento feito pelo useEffect acima
   }
 
-  const quickLogin = (role: 'admin' | 'aluno') => {
-    setEmail(role === 'admin' ? 'admin@iaoffice.com' : 'aluno@iaoffice.com')
+  // Só a conta de demonstração de aluno fica exposta; o acesso de admin é restrito.
+  const quickLoginAluno = () => {
+    setEmail('aluno@iaoffice.com')
     setPassword('senha123')
   }
 
@@ -57,6 +89,21 @@ export default function Login() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
+          {isCadastro && (
+            <div>
+              <label className="block text-sm font-medium text-white/70 mb-1.5" htmlFor="nome">Nome completo</label>
+              <div className="relative">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-white/30" style={{ fontSize: '18px' }}>badge</span>
+                <input
+                  id="nome" type="text" required autoComplete="name" maxLength={80}
+                  value={nome} onChange={e => setNome(e.target.value)}
+                  placeholder="Como deve aparecer no certificado"
+                  className="w-full pl-10 pr-4 py-3 bg-[#0f172a] border border-[#334155] rounded-lg text-white placeholder-white/25 text-sm focus:outline-none focus:border-[#8b5cf6] focus:ring-1 focus:ring-[#8b5cf6] transition-colors"
+                />
+              </div>
+            </div>
+          )}
+
           {/* Email */}
           <div>
             <label className="block text-sm font-medium text-white/70 mb-1.5" htmlFor="email">E-mail</label>
@@ -75,12 +122,15 @@ export default function Login() {
           <div>
             <div className="flex justify-between items-center mb-1.5">
               <label className="text-sm font-medium text-white/70" htmlFor="password">Senha</label>
-              <a href="#" className="text-xs text-[#8b5cf6] hover:text-[#a78bfa] transition-colors">Esqueci a senha</a>
+              {!isCadastro && (
+                <a href="#" className="text-xs text-[#8b5cf6] hover:text-[#a78bfa] transition-colors">Esqueci a senha</a>
+              )}
             </div>
             <div className="relative">
               <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-white/30" style={{ fontSize: '18px' }}>lock</span>
               <input
                 id="password" type={showPwd ? 'text' : 'password'} required
+                autoComplete={isCadastro ? 'new-password' : 'current-password'}
                 value={password} onChange={e => setPassword(e.target.value)}
                 placeholder="••••••••"
                 className="w-full pl-10 pr-10 py-3 bg-[#0f172a] border border-[#334155] rounded-lg text-white placeholder-white/25 text-sm focus:outline-none focus:border-[#8b5cf6] focus:ring-1 focus:ring-[#8b5cf6] transition-colors"
@@ -90,6 +140,29 @@ export default function Login() {
               </button>
             </div>
           </div>
+
+          {isCadastro && (
+            <div>
+              <label className="block text-sm font-medium text-white/70 mb-1.5" htmlFor="confirm-password">Confirmar senha</label>
+              <div className="relative">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-white/30" style={{ fontSize: '18px' }}>lock_reset</span>
+                <input
+                  id="confirm-password" type={showPwd ? 'text' : 'password'} required autoComplete="new-password"
+                  value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
+                  placeholder="Repita a senha"
+                  className="w-full pl-10 pr-4 py-3 bg-[#0f172a] border border-[#334155] rounded-lg text-white placeholder-white/25 text-sm focus:outline-none focus:border-[#8b5cf6] focus:ring-1 focus:ring-[#8b5cf6] transition-colors"
+                />
+              </div>
+              <p className="text-white/30 text-xs mt-1.5">Mínimo de 6 caracteres.</p>
+            </div>
+          )}
+
+          {info && (
+            <div className="flex items-start gap-2 text-emerald-300 text-sm bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2" role="status">
+              <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>mark_email_read</span>
+              {info}
+            </div>
+          )}
 
           {error && (
             <div className="flex items-center gap-2 text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
@@ -106,38 +179,43 @@ export default function Login() {
             {loading ? (
               <>
                 <span className="material-symbols-outlined animate-spin" style={{ fontSize: '18px' }}>progress_activity</span>
-                Entrando...
+                {isCadastro ? 'Criando conta...' : 'Entrando...'}
               </>
             ) : (
               <>
-                Entrar
-                <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>arrow_forward</span>
+                {isCadastro ? 'Criar conta' : 'Entrar'}
+                <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>{isCadastro ? 'person_add' : 'arrow_forward'}</span>
               </>
             )}
           </button>
         </form>
 
+        <p className="text-center text-white/50 text-sm mt-5">
+          {isCadastro ? 'Já tem conta?' : 'Ainda não tem conta?'}{' '}
+          <button
+            type="button"
+            onClick={() => switchMode(isCadastro ? 'entrar' : 'cadastro')}
+            className="text-[#8b5cf6] hover:text-[#a78bfa] font-medium transition-colors"
+          >
+            {isCadastro ? 'Entrar' : 'Criar conta'}
+          </button>
+        </p>
+
         {/* Quick access */}
+        {!isCadastro && (
         <div className="mt-8 pt-6 border-t border-[#334155]">
           <p className="text-center text-white/30 text-xs mb-3">Acesso rápido para demonstração</p>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => quickLogin('aluno')}
-              className="py-2 px-3 bg-[#0f172a] border border-[#334155] rounded-lg text-white/60 text-xs hover:text-white hover:border-[#8b5cf6]/50 transition-all flex items-center gap-2 justify-center"
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>person</span>
-              Login como Aluno
-            </button>
-            <button
-              onClick={() => quickLogin('admin')}
-              className="py-2 px-3 bg-[#0f172a] border border-[#334155] rounded-lg text-white/60 text-xs hover:text-white hover:border-[#8b5cf6]/50 transition-all flex items-center gap-2 justify-center"
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>admin_panel_settings</span>
-              Login como Admin
-            </button>
-          </div>
-          <p className="text-center text-white/20 text-xs mt-3">Senha para todos: <code className="bg-white/5 px-1.5 py-0.5 rounded text-white/40">senha123</code></p>
+          <button
+            type="button"
+            onClick={quickLoginAluno}
+            className="w-full py-2 px-3 bg-[#0f172a] border border-[#334155] rounded-lg text-white/60 text-xs hover:text-white hover:border-[#8b5cf6]/50 transition-all flex items-center gap-2 justify-center"
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>person</span>
+            Entrar como aluno de demonstração
+          </button>
+          <p className="text-center text-white/20 text-xs mt-3">Conta compartilhada só para conhecer o curso. Para salvar seu progresso, crie sua conta.</p>
         </div>
+        )}
       </div>
     </div>
   )

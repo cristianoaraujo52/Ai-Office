@@ -1,18 +1,107 @@
-import React from 'react'
+import React, { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { useData } from '../contexts/DataContext'
 import Sidebar from '../components/Sidebar'
 
+const nameConfirmKey = (userId: string) => `ia_academy_cert_nome_${userId}`
+
+function readConfirmedName(userId?: string) {
+  if (!userId) return null
+  try { return localStorage.getItem(nameConfirmKey(userId)) } catch { return null }
+}
+
 export default function Certificate() {
-  const { user } = useAuth()
-  const today = new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })
-  const certCode = `IA-2024-${user?.nome?.split(' ').map(n => n[0]).join('')}-${Math.floor(1000 + Math.random() * 9000)}`
+  const { user, updateNome } = useAuth()
+  const { modulos, progressos, loading } = useData()
+  const isAdmin = user?.role === 'admin'
+
+  // Conclusão = todas as aulas ativas dos módulos ativos marcadas como concluídas.
+  const { totalAulas, concluidas, dataConclusao } = useMemo(() => {
+    const aulaIds = new Set(
+      modulos.filter(m => m.ativo !== false)
+        .flatMap(m => (m.aulas ?? []).filter(a => a.ativo !== false).map(a => a.id)),
+    )
+    const feitas = progressos.filter(p => p.concluida && aulaIds.has(p.aula_id))
+    const ultima = feitas.map(p => p.updated_at).filter(Boolean).sort().pop()
+    return { totalAulas: aulaIds.size, concluidas: new Set(feitas.map(p => p.aula_id)).size, dataConclusao: ultima }
+  }, [modulos, progressos])
+
+  const cursoConcluido = totalAulas > 0 && concluidas >= totalAulas
+  const percent = totalAulas ? Math.round((concluidas / totalAulas) * 100) : 0
+
+  // O aluno confirma (ou corrige) o nome antes de imprimir/baixar.
+  const [confirmedName, setConfirmedName] = useState(() => readConfirmedName(user?.id))
+  const [editingName, setEditingName] = useState(false)
+  const [nameDraft, setNameDraft] = useState('')
+  const [nameError, setNameError] = useState('')
+  const [savingName, setSavingName] = useState(false)
+  const nameConfirmed = isAdmin || (!!user?.nome && confirmedName === user.nome)
+
+  const confirmName = (nome: string) => {
+    if (!user) return
+    try { localStorage.setItem(nameConfirmKey(user.id), nome) } catch { /* sem armazenamento: pede de novo na próxima vez */ }
+    setConfirmedName(nome)
+  }
+
+  const saveName = async () => {
+    setSavingName(true)
+    setNameError('')
+    const result = await updateNome(nameDraft)
+    setSavingName(false)
+    if (result.error) { setNameError(result.error); return }
+    setEditingName(false)
+    confirmName(nameDraft.replace(/\s+/g, ' ').trim().slice(0, 80))
+  }
+
+  const conclusao = dataConclusao ? new Date(dataConclusao) : new Date()
+  const today = conclusao.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })
+  // Código estável por aluno (antes era sorteado a cada renderização e não servia para conferência).
+  const certCode = `IA-${conclusao.getFullYear()}-${(user?.id ?? '').replace(/-/g, '').slice(0, 8).toUpperCase()}`
 
   const handlePrint = () => window.print()
 
   const handleDownload = () => {
     // Use browser print to PDF
     window.print()
+  }
+
+  if (!isAdmin && (loading || !cursoConcluido)) {
+    return (
+      <div className="min-h-screen bg-[#0f172a] flex">
+        <Sidebar />
+        <div className="flex-1 ml-0 md:ml-[280px] flex items-center justify-center p-8">
+          <div className="max-w-md w-full text-center bg-[#1e293b] border border-[#334155] rounded-2xl p-8">
+            <span className="material-symbols-outlined text-white/30" style={{ fontSize: '56px' }}>
+              {loading ? 'hourglass_top' : 'lock'}
+            </span>
+            <h2 className="text-white text-xl font-bold mt-3">
+              {loading ? 'Carregando seu progresso...' : 'Certificado bloqueado'}
+            </h2>
+            {!loading && (
+              <>
+                <p className="text-white/50 text-sm mt-2">
+                  Conclua todas as {totalAulas} aulas do curso para liberar seu certificado.
+                </p>
+                <div className="mt-6 text-left">
+                  <div className="flex justify-between text-xs mb-1.5">
+                    <span className="text-white/50">{concluidas} de {totalAulas} aulas</span>
+                    <span className="text-[#8b5cf6] font-semibold">{percent}%</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                    <div className="h-full bg-[#8b5cf6] rounded-full" style={{ width: `${percent}%` }} />
+                  </div>
+                </div>
+                <Link to="/dashboard" className="inline-flex items-center gap-2 mt-6 px-5 py-2.5 bg-[#8b5cf6] hover:bg-[#7c3aed] text-white text-sm font-medium rounded-lg transition-colors">
+                  Continuar estudando
+                  <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>arrow_forward</span>
+                </Link>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -32,14 +121,18 @@ export default function Certificate() {
           <div className="flex gap-2">
             <button
               onClick={handleDownload}
-              className="flex items-center gap-2 px-4 py-1.5 bg-[#8b5cf6] text-white rounded-lg text-xs font-medium hover:bg-[#7c3aed] transition-all"
+              disabled={!nameConfirmed}
+              title={nameConfirmed ? undefined : 'Confirme seu nome primeiro'}
+              className="flex items-center gap-2 px-4 py-1.5 bg-[#8b5cf6] text-white rounded-lg text-xs font-medium hover:bg-[#7c3aed] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>download</span>
               Baixar PDF
             </button>
             <button
               onClick={handlePrint}
-              className="flex items-center gap-2 px-4 py-1.5 bg-[#1e293b] border border-[#334155] text-white/70 rounded-lg text-xs hover:text-white hover:border-white/20 transition-all"
+              disabled={!nameConfirmed}
+              title={nameConfirmed ? undefined : 'Confirme seu nome primeiro'}
+              className="flex items-center gap-2 px-4 py-1.5 bg-[#1e293b] border border-[#334155] text-white/70 rounded-lg text-xs hover:text-white hover:border-white/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>print</span>
               Imprimir
@@ -55,6 +148,52 @@ export default function Certificate() {
             </a>
           </div>
         </div>
+
+        {!nameConfirmed && (
+          <div className="no-print mx-4 md:mx-8 mt-6 bg-[#1e293b] border border-[#8b5cf6]/40 rounded-xl p-4">
+            {!editingName ? (
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+                <div className="flex items-start gap-3">
+                  <span className="material-symbols-outlined text-[#8b5cf6]">badge</span>
+                  <div>
+                    <p className="text-white text-sm font-medium">Confira como seu nome vai aparecer no certificado</p>
+                    <p className="text-white text-lg font-bold mt-0.5">{user?.nome}</p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setNameDraft(user?.nome ?? ''); setNameError(''); setEditingName(true) }}
+                    className="px-4 py-2 bg-[#0f172a] border border-[#334155] text-white/80 rounded-lg text-sm hover:border-[#8b5cf6]/50 transition-colors"
+                  >
+                    Corrigir nome
+                  </button>
+                  <button
+                    onClick={() => { if (user?.nome) confirmName(user.nome) }}
+                    className="px-4 py-2 bg-[#8b5cf6] hover:bg-[#7c3aed] text-white rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Está correto
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={e => { e.preventDefault(); saveName() }} className="flex flex-col gap-2">
+                <label htmlFor="cert-nome" className="text-white text-sm font-medium">Nome completo para o certificado</label>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    id="cert-nome" value={nameDraft} maxLength={80} autoFocus
+                    onChange={e => setNameDraft(e.target.value)}
+                    className="flex-1 px-3 py-2 bg-[#0f172a] border border-[#334155] rounded-lg text-white text-sm focus:outline-none focus:border-[#8b5cf6] focus:ring-1 focus:ring-[#8b5cf6]"
+                  />
+                  <button type="button" onClick={() => setEditingName(false)} className="px-4 py-2 text-white/60 text-sm hover:text-white">Cancelar</button>
+                  <button disabled={savingName} className="px-4 py-2 bg-[#8b5cf6] hover:bg-[#7c3aed] text-white rounded-lg text-sm font-medium disabled:opacity-50">
+                    {savingName ? 'Salvando...' : 'Salvar e confirmar'}
+                  </button>
+                </div>
+                {nameError && <p className="text-red-400 text-xs">{nameError}</p>}
+              </form>
+            )}
+          </div>
+        )}
 
         {/* Certificate */}
         <main className="flex-1 flex items-center justify-center p-8 fade-in">

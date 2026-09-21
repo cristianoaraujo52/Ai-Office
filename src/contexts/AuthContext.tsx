@@ -4,12 +4,20 @@ import { mockUsers } from '../lib/mockData'
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
 import { loadOrEnsureProfile, recordLoginOnce } from '../lib/authPersistence'
 
+export interface RegisterResult {
+  error?: string
+  /** true quando o Supabase exige confirmar o e-mail antes do primeiro login */
+  needsConfirmation?: boolean
+}
+
 interface AuthContextType {
   user: User | null
   loading: boolean
   login: (email: string, password: string) => Promise<{ error?: string }>
+  register: (nome: string, email: string, password: string) => Promise<RegisterResult>
   logout: () => Promise<void>
   updateAvatar: (file: File) => Promise<{ error?: string }>
+  updateNome: (nome: string) => Promise<{ error?: string }>
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
@@ -87,6 +95,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return {}
   }
 
+  /**
+   * Cadastro aberto de alunos. O papel é sempre 'aluno': o banco ignora qualquer
+   * role enviado nos metadados (supabase/seguranca-cadastro-aberto.sql).
+   * Com sessão imediata, o onAuthStateChange carrega o perfil e o Login redireciona.
+   */
+  const register = async (nome: string, email: string, password: string): Promise<RegisterResult> => {
+    if (!isSupabaseConfigured) {
+      return { error: 'O cadastro só está disponível com o banco de dados conectado.' }
+    }
+
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { nome },
+        emailRedirectTo: `${window.location.origin}/login`,
+      },
+    })
+    if (error) return { error: error.message }
+
+    // Com confirmação de e-mail ligada, o Supabase não revela se o e-mail já existe:
+    // devolve um usuário sem identidades.
+    if (data.user && data.user.identities?.length === 0) {
+      return { error: 'Este e-mail já está cadastrado. Use "Entrar" ou "Esqueci a senha".' }
+    }
+
+    return data.session ? {} : { needsConfirmation: true }
+  }
+
   const updateAvatar = async (file: File): Promise<{ error?: string }> => {
     if (!user) return { error: 'Usuário não autenticado.' }
 
@@ -125,6 +162,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return {}
   }
 
+  /** O aluno corrige o próprio nome (usado no certificado). O papel não muda. */
+  const updateNome = async (nome: string): Promise<{ error?: string }> => {
+    if (!user) return { error: 'Usuário não autenticado.' }
+    const clean = nome.replace(/\s+/g, ' ').trim().slice(0, 80)
+    if (clean.length < 2) return { error: 'Informe seu nome completo.' }
+
+    if (isSupabaseConfigured) {
+      const { error } = await supabase.from('profiles').update({ nome: clean }).eq('id', user.id)
+      if (error) return { error: error.message }
+    }
+
+    const updated = { ...user, nome: clean }
+    setUser(updated)
+    if (!isSupabaseConfigured) localStorage.setItem('ia_academy_user', JSON.stringify(updated))
+    return {}
+  }
+
   const logout = async () => {
     if (!isSupabaseConfigured) {
       setUser(null)
@@ -136,7 +190,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, updateAvatar }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, updateAvatar, updateNome }}>
       {children}
     </AuthContext.Provider>
   )
