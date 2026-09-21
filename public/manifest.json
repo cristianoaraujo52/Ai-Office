@@ -1,0 +1,42 @@
+{
+  "name": "IA Office Academy",
+  "short_name": "IA Academy",
+  "description": "Curso de Inteligência Artificial para o Ambiente Corporativo",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#0f172a",
+  "background_color": "#0f172a",
+  "lang": "pt-BR",
+  "categories": ["education", "productivity"],
+  "icons": [
+    {
+      "src": "/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "short_name": "Início",
+      "url": "/dashboard",
+      "icons": [{ "src": "/icon-192.svg", "sizes": "192x192" }]
+    },
+    {
+      "name": "Meus Cursos",
+      "short_name": "Cursos",
+      "url": "/cursos",
+      "icons": [{ "src": "/icon-192.svg", "sizes": "192x192" }]
+    }
+  ],
+  "screenshots": []
+}
