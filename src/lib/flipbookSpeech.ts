@@ -1,5 +1,11 @@
+// Vozes neurais do navegador (ex.: "Microsoft Francisca Online (Natural)" no Edge)
+// soam bem melhores que as locais; são preferidas quando existem.
+const NATURAL_VOICE = /natural|neural|online|francisca/i
+
 export function choosePortugueseVoice(voices: SpeechSynthesisVoice[]) {
-  return voices.find(voice => voice.lang.toLowerCase() === 'pt-br')
+  const ptBR = voices.filter(voice => voice.lang.toLowerCase().replace('_', '-') === 'pt-br')
+  return ptBR.find(voice => NATURAL_VOICE.test(voice.name))
+    ?? ptBR[0]
     ?? voices.find(voice => voice.lang.toLowerCase().startsWith('pt'))
 }
 

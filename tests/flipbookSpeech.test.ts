@@ -23,6 +23,13 @@ const voices = [
 
 assert.equal(choosePortugueseVoice(voices)?.lang, 'pt-BR')
 
+// Com várias vozes pt-BR, a neural/natural tem prioridade sobre a local.
+const withNatural = [
+  { lang: 'pt-BR', name: 'Microsoft Maria - Portuguese (Brazil)' },
+  { lang: 'pt-BR', name: 'Microsoft Francisca Online (Natural) - Portuguese (Brazil)' },
+] as SpeechSynthesisVoice[]
+assert.match(choosePortugueseVoice(withNatural)?.name ?? '', /Natural/)
+
 const utterance = createFlipbookUtterance('Texto da página', voices)
 assert.equal(utterance.text, 'Texto da página')
 assert.equal(utterance.lang, 'pt-BR')

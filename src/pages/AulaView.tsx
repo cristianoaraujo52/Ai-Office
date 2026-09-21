@@ -5,6 +5,8 @@ import { extractYoutubeId, getYoutubeWatchUrl, getYoutubeThumbnail } from '../li
 import SlideRenderer from '../components/SlideRenderer'
 import { buildQuizReview } from '../lib/quizFeedback'
 import { getAudioDescriptionText } from '../lib/audioDescription'
+import { aulaNarrationKey, narrationUrl, NARRATION_VOICE_LABEL, useNarrationManifest } from '../lib/neuralNarration'
+import { choosePortugueseVoice } from '../lib/flipbookSpeech'
 import { useAuth } from '../contexts/AuthContext'
 import { useGamification } from '../contexts/GamificationContext'
 import AiTutor from '../components/AiTutor'
@@ -130,6 +132,21 @@ export default function AulaView() {
   const quiz = aula?.quiz
   const audioDescriptionText = useMemo(() => getAudioDescriptionText(aula), [aula])
 
+  // MP3 com voz neural, quando já foi gerado para exatamente este texto.
+  const narrationManifest = useNarrationManifest()
+  const neuralAudioUrl = aula ? narrationUrl(narrationManifest, aulaNarrationKey(aula.id), audioDescriptionText) : null
+  const neuralAudioRef = useRef<HTMLAudioElement | null>(null)
+
+  const stopNeuralAudio = useCallback(() => {
+    const audio = neuralAudioRef.current
+    if (!audio) return
+    audio.onended = null
+    audio.onerror = null
+    audio.pause()
+    neuralAudioRef.current = null
+    setIsSpeaking(false)
+  }, [])
+
   const handleEnviarAtividade = useCallback(async () => {
     if (!aula || !atividadeTexto.trim() || savingAtividade || isAdmin) return
     setSavingAtividade(true)
@@ -165,6 +182,24 @@ export default function AulaView() {
   const handleToggleAudioDescription = useCallback(() => {
     if (!audioDescriptionText) return
 
+    if (neuralAudioUrl) {
+      if (isSpeaking) {
+        stopNeuralAudio()
+        setIsSpeaking(false)
+        return
+      }
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) window.speechSynthesis.cancel()
+      stopNeuralAudio()
+      const audio = new Audio(neuralAudioUrl)
+      audio.onended = () => { neuralAudioRef.current = null; setIsSpeaking(false) }
+      audio.onerror = () => { neuralAudioRef.current = null; setIsSpeaking(false) }
+      neuralAudioRef.current = audio
+      setSpeechUnsupported(false)
+      setIsSpeaking(true)
+      audio.play().catch(() => { neuralAudioRef.current = null; setIsSpeaking(false) })
+      return
+    }
+
     if (
       typeof window === 'undefined' ||
       !('speechSynthesis' in window) ||
@@ -182,7 +217,9 @@ export default function AulaView() {
 
     window.speechSynthesis.cancel()
     const utterance = new SpeechSynthesisUtterance(audioDescriptionText)
-    utterance.lang = 'pt-BR'
+    const voice = choosePortugueseVoice(window.speechSynthesis.getVoices())
+    utterance.lang = voice?.lang ?? 'pt-BR'
+    utterance.voice = voice ?? null
     utterance.rate = 0.95
     utterance.onend = () => setIsSpeaking(false)
     utterance.onerror = () => setIsSpeaking(false)
@@ -190,15 +227,16 @@ export default function AulaView() {
     setSpeechUnsupported(false)
     setIsSpeaking(true)
     window.speechSynthesis.speak(utterance)
-  }, [audioDescriptionText, isSpeaking])
+  }, [audioDescriptionText, isSpeaking, neuralAudioUrl, stopNeuralAudio])
 
   useEffect(() => {
     return () => {
+      stopNeuralAudio()
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.cancel()
       }
     }
-  }, [id])
+  }, [id, stopNeuralAudio])
 
   // Carrega notas do localStorage quando a aula muda
   useEffect(() => {
@@ -620,7 +658,9 @@ export default function AulaView() {
                         <div>
                           <h4 className="text-white font-medium text-sm">Áudio descrição da aula</h4>
                           <p className="text-white/45 text-xs mt-1">
-                            Reproduz a narração usando a voz do navegador.
+                            {neuralAudioUrl
+                              ? `Narração com ${NARRATION_VOICE_LABEL}.`
+                              : 'Reproduz a narração usando a voz do navegador.'}
                           </p>
                         </div>
                         <button

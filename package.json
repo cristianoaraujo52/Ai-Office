@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "db:seed": "npx tsx supabase/seed.ts",
     "db:slides": "npx tsx supabase/update-slides.ts",
-    "db:covers": "npx tsx supabase/update-module-covers.ts"
+    "db:covers": "npx tsx supabase/update-module-covers.ts",
+    "audio:narracao": "npx tsx scripts/narracao-textos.ts && python scripts/gerar-narracao.py"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.0",

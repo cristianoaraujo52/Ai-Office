@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useData } from '../contexts/DataContext'
 import { comeceAquiPages } from '../data/comeceAquiPages'
 import { createFlipbookUtterance, supportsSpeech } from '../lib/flipbookSpeech'
+import { comeceAquiNarrationKey, narrationUrl, useNarrationManifest } from '../lib/neuralNarration'
 
 type SpeechState = 'idle' | 'speaking' | 'paused'
 type ImageState = 'loading' | 'ready' | 'error'
@@ -21,6 +22,8 @@ export default function ComeceAqui() {
   const [imageState, setImageState] = useState<ImageState>('loading')
   const [imageRetry, setImageRetry] = useState(0)
   const speechTokenRef = useRef(0)
+  const neuralAudioRef = useRef<HTMLAudioElement | null>(null)
+  const narrationManifest = useNarrationManifest()
 
   const page = comeceAquiPages[pageIndex]
   const isFirstPage = pageIndex === 0
@@ -28,8 +31,20 @@ export default function ComeceAqui() {
   const firstModule = modulos.find(modulo => modulo.ordem === 1)
   const courseTarget = firstModule ? `/modulo/${firstModule.id}` : '/dashboard'
 
+  const neuralUrl = narrationUrl(narrationManifest, comeceAquiNarrationKey(page.number), page.narration)
+
+  const stopNeuralAudio = () => {
+    const audio = neuralAudioRef.current
+    if (!audio) return
+    audio.onended = null
+    audio.onerror = null
+    audio.pause()
+    neuralAudioRef.current = null
+  }
+
   const cancelSpeech = useCallback(() => {
     speechTokenRef.current += 1
+    stopNeuralAudio()
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel()
     }
@@ -37,6 +52,25 @@ export default function ComeceAqui() {
   }, [])
 
   const speakPage = useCallback(() => {
+    // Voz neural pré-gerada para esta página
+    if (neuralUrl) {
+      speechTokenRef.current += 1
+      const token = speechTokenRef.current
+      if (supportsSpeech()) window.speechSynthesis.cancel()
+      stopNeuralAudio()
+      const audio = new Audio(neuralUrl)
+      const finish = () => {
+        if (speechTokenRef.current === token) { neuralAudioRef.current = null; setSpeechState('idle') }
+      }
+      audio.onended = finish
+      audio.onerror = finish
+      neuralAudioRef.current = audio
+      setSpeechUnsupported(false)
+      setSpeechState('speaking')
+      audio.play().catch(finish)
+      return
+    }
+
     if (!supportsSpeech()) {
       setSpeechUnsupported(true)
       setSpeechState('idle')
@@ -65,12 +99,13 @@ export default function ComeceAqui() {
     setSpeechUnsupported(false)
     setSpeechState('speaking')
     window.speechSynthesis.speak(utterance)
-  }, [page.narration])
+  }, [page.narration, neuralUrl])
 
   useEffect(() => {
     if (audioEnabled) speakPage()
     return () => {
       speechTokenRef.current += 1
+      stopNeuralAudio()
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.cancel()
       }
@@ -112,19 +147,29 @@ export default function ComeceAqui() {
   }
 
   const pauseSpeech = () => {
+    if (neuralAudioRef.current) {
+      neuralAudioRef.current.pause()
+      setSpeechState('paused')
+      return
+    }
     if (!supportsSpeech()) return
     window.speechSynthesis.pause()
     setSpeechState('paused')
   }
 
   const continueSpeech = () => {
+    if (neuralAudioRef.current) {
+      neuralAudioRef.current.play().catch(() => setSpeechState('idle'))
+      setSpeechState('speaking')
+      return
+    }
     if (!supportsSpeech()) return
     window.speechSynthesis.resume()
     setSpeechState('speaking')
   }
 
   const activateAudio = () => {
-    if (!supportsSpeech()) {
+    if (!neuralUrl && !supportsSpeech()) {
       setSpeechUnsupported(true)
       return
     }

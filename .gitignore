@@ -27,3 +27,6 @@ dist-ssr
 # Backups locais, originais de imagens e logs (contêm cópias do .env.local)
 .logs/
 .claude/settings.local.json
+
+# Texto intermediário da narração (gerado por scripts/narracao-textos.ts)
+scripts/narracao-textos.json
