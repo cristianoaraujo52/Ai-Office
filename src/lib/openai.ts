@@ -1,9 +1,38 @@
+import { supabase } from './supabase'
+
 const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY ?? ''
 
-export const isOpenAIConfigured =
+// Chave direta só no desenvolvimento local; no site publicado a chave fica na
+// função netlify/functions/openai.mts e nunca vai para o navegador.
+const hasDirectKey =
   Boolean(OPENAI_API_KEY) &&
   !OPENAI_API_KEY.startsWith('sk-sua') &&
   OPENAI_API_KEY.length > 20
+
+export const isOpenAIConfigured = hasDirectKey || import.meta.env.PROD
+
+const DIRECT_URLS = {
+  chat: 'https://api.openai.com/v1/chat/completions',
+  speech: 'https://api.openai.com/v1/audio/speech',
+} as const
+
+async function openaiFetch(op: keyof typeof DIRECT_URLS, body: unknown): Promise<Response> {
+  if (hasDirectKey) {
+    return fetch(DIRECT_URLS[op], {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPENAI_API_KEY}` },
+      body: JSON.stringify(body),
+    })
+  }
+  const { data } = await supabase.auth.getSession()
+  const token = data.session?.access_token
+  if (!token) throw new Error('Faça login para usar a IA')
+  return fetch(`/.netlify/functions/openai?op=${op}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  })
+}
 
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
@@ -14,18 +43,11 @@ export async function chatCompletion(
   messages: ChatMessage[],
   options?: { model?: string; temperature?: number; max_tokens?: number }
 ): Promise<string> {
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: options?.model ?? 'gpt-4o-mini',
-      messages,
-      temperature: options?.temperature ?? 0.7,
-      max_tokens: options?.max_tokens ?? 1024,
-    }),
+  const res = await openaiFetch('chat', {
+    model: options?.model ?? 'gpt-4o-mini',
+    messages,
+    temperature: options?.temperature ?? 0.7,
+    max_tokens: options?.max_tokens ?? 1024,
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
@@ -38,18 +60,11 @@ export async function chatCompletion(
 export type TTSVoice = 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer'
 
 export async function textToSpeech(input: string, voice: TTSVoice = 'nova'): Promise<Blob> {
-  const res = await fetch('https://api.openai.com/v1/audio/speech', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: 'tts-1',
-      input: input.slice(0, 4096),
-      voice,
-      response_format: 'mp3',
-    }),
+  const res = await openaiFetch('speech', {
+    model: 'tts-1',
+    input: input.slice(0, 4096),
+    voice,
+    response_format: 'mp3',
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
@@ -63,19 +78,12 @@ export async function streamChatCompletion(
   onChunk: (chunk: string) => void,
   options?: { model?: string }
 ): Promise<void> {
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: options?.model ?? 'gpt-4o-mini',
-      messages,
-      temperature: 0.7,
-      max_tokens: 800,
-      stream: true,
-    }),
+  const res = await openaiFetch('chat', {
+    model: options?.model ?? 'gpt-4o-mini',
+    messages,
+    temperature: 0.7,
+    max_tokens: 800,
+    stream: true,
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))

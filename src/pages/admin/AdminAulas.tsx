@@ -246,6 +246,7 @@ export default function AdminAulas() {
   const [form, setForm] = useState<AulaForm>({ ...EMPTY_FORM, modulo_id: dbModulos[0]?.id || '' })
   const [search, setSearch] = useState('')
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   useEffect(() => {
     if (dbModulos.length) {
@@ -273,6 +274,7 @@ export default function AdminAulas() {
     setEditing(null)
     setForm({ ...EMPTY_FORM, modulo_id: modulos[0]?.id || '' })
     setTab('basico')
+    setSaveError(null)
     setShowModal(true)
   }
 
@@ -294,11 +296,13 @@ export default function AdminAulas() {
       materiais: [...(a.materiais || [])],
     })
     setTab('basico')
+    setSaveError(null)
     setShowModal(true)
   }
 
   const save = async () => {
     setSaving(true)
+    setSaveError(null)
     try {
       const id = editing?.id || `aula-${Date.now()}`
       const aulaPayload: Partial<Aula> & { id: string; modulo_id: string } = {
@@ -323,6 +327,12 @@ export default function AdminAulas() {
       }
       await saveAula(aulaPayload, form.slides)
       setShowModal(false)
+    } catch (err) {
+      setModulos(dbModulos)
+      const msg = err instanceof Error ? err.message : String(err)
+      setSaveError(/row-level security|permission denied/i.test(msg)
+        ? 'Sem permissão para gravar: sua conta não está como admin no banco. Rode supabase/corrigir-permissoes-admin.sql e entre de novo.'
+        : `Não foi possível salvar: ${msg}`)
     } finally {
       setSaving(false)
     }
@@ -899,6 +909,11 @@ export default function AdminAulas() {
               )}
             </div>
 
+            {saveError && (
+              <div role="alert" className="mx-6 mb-2 px-4 py-3 rounded-lg border border-red-500/40 bg-red-500/10 text-red-300 text-sm">
+                {saveError}
+              </div>
+            )}
             {/* Modal footer */}
             <div className="flex gap-3 px-6 py-4 border-t border-white/5 shrink-0 bg-[#0a0c10] rounded-b-2xl">
               <button onClick={() => setShowModal(false)}
