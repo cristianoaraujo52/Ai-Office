@@ -412,7 +412,7 @@ export default function AdminAulas() {
   return (
     <div className="min-h-screen bg-[#0f172a] flex">
       <Sidebar isAdmin />
-      <div className="flex-1 ml-0 md:ml-[280px] flex flex-col">
+      <div className="flex-1 min-w-0 ml-0 md:ml-[280px] flex flex-col">
         <TopBar title="Gerenciar Aulas" subtitle="Edite o conteúdo didático completo" />
         <main className="flex-1 p-8 fade-in">
 
@@ -454,8 +454,8 @@ export default function AdminAulas() {
           </div>
 
           {/* Table */}
-          <div className="bg-[#1e293b] border border-white/5 rounded-xl overflow-hidden">
-            <table className="w-full text-left">
+          <div className="bg-[#1e293b] border border-white/5 rounded-xl overflow-x-auto">
+            <table className="w-full min-w-[860px] text-left">
               <thead>
                 <tr className="border-b border-white/5">
                   {['Título', 'Módulo', 'Duração', 'Slides', 'Quiz', 'Áudio', 'Ações'].map(h => (
@@ -473,7 +473,10 @@ export default function AdminAulas() {
                 ) : filtered.map(a => (
                   <tr key={a.id} className="hover:bg-white/[0.02] transition-colors">
                     <td className="py-3.5 px-5">
-                      <p className="text-white text-sm font-medium">{a.titulo}</p>
+                      <button type="button" onClick={() => openEdit(a)} title="Editar aula (vídeo, textos, slides)"
+                        className="text-white text-sm font-medium text-left hover:text-[#8b5cf6] transition-colors">
+                        {a.titulo}
+                      </button>
                       <p className="text-white/30 text-xs truncate max-w-[220px]">{a.descricao}</p>
                     </td>
                     <td className="py-3.5 px-5">
